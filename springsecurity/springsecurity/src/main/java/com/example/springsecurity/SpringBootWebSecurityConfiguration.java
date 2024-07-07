@@ -1,5 +1,6 @@
 package com.example.springsecurity;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -13,11 +14,18 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AuthorizeHttpRequestsConfigurer;
+import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
+import org.springframework.security.config.annotation.web.configurers.PasswordManagementConfigurer;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
+import org.springframework.security.provisioning.JdbcUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+
+import javax.sql.DataSource;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnWebApplication(type = Type.SERVLET)
@@ -43,26 +51,36 @@ public class SpringBootWebSecurityConfiguration {
         @Order(2147483642)
         SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
             http.authorizeHttpRequests((requests) -> {
-                ((AuthorizeHttpRequestsConfigurer.AuthorizedUrl)requests.anyRequest()).authenticated();
+                ((AuthorizeHttpRequestsConfigurer.AuthorizedUrl)requests.requestMatchers("/h2-console/**").permitAll().anyRequest()).authenticated();
             });
-            http.formLogin(Customizer.withDefaults());
+            //http.formLogin(Customizer.withDefaults());
             http.httpBasic(Customizer.withDefaults());
+            http.headers(headers->
+                    headers.frameOptions(frameOptions -> frameOptions.sameOrigin()));
+            http.csrf(csrf->csrf.disable());
             return http.build();
         }
-
+        @Autowired
+        DataSource dataSource;
         @Bean
         public UserDetailsService userDetailsService() {
             UserDetails user1 = User.withUsername("user1")
-                    .password("{bcrypt}$2a$10$W6L2LJzLO71kZc1sJ1MnRuyVRBj8BLy3jM/qdLdzeAGZaEHq6kk1W") // bcrypt("userpassword")
+                    .password(passwordEncoder().encode("userpassword"))
                     .roles("USER")
                     .build();
 
             UserDetails admin = User.withUsername("admin")
-                    .password("{bcrypt}$2a$10$W6L2LJzLO71kZc1sJ1MnRuyVRBj8BLy3jM/qdLdzeAGZaEHq6kk1W") // bcrypt("adminpassword")
+                    .password(passwordEncoder().encode("adminpassword"))
                     .roles("ADMIN")
                     .build();
-
-            return new InMemoryUserDetailsManager(user1, admin);
+            JdbcUserDetailsManager userDetailsManager=new JdbcUserDetailsManager(dataSource);
+            userDetailsManager.createUser(user1);
+            userDetailsManager.createUser(admin);
+           return userDetailsManager;
+        }
+        @Bean
+        public PasswordEncoder passwordEncoder(){
+            return new BCryptPasswordEncoder();
         }
     }
 }
